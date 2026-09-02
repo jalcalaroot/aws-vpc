@@ -89,11 +89,15 @@ resource "aws_security_group" "interface_endpoints" {
     cidr_blocks = [var.vpc_cidr]
   }
 
+  # Los ENIs de Interface Endpoint solo responden a clientes dentro de la
+  # VPC, nunca inician tráfico hacia Internet - egress se limita al CIDR
+  # de la VPC en vez de 0.0.0.0/0.
   egress {
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
+    description = "Respuesta HTTPS hacia la VPC"
+    protocol    = "tcp"
+    from_port   = 443
+    to_port     = 443
+    cidr_blocks = [var.vpc_cidr]
   }
 
   tags = {
