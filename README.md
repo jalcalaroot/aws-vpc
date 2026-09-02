@@ -93,7 +93,7 @@ Reviewed against the [AWS Well-Architected Framework](https://docs.aws.amazon.co
 
 | Item | Default | Approx. monthly cost |
 |---|---|---|
-| Regional NAT Gateway | always on (no toggle) | ~$32 base + data processing |
+| Regional NAT Gateway | always on (no toggle) | **~$32/month per active AZ**, not a flat $32 total — billed as one "NAT Gateway-hour" per AZ it's actively serving (`$0.045/hr/AZ` in us-east-1). With the default `az_count = 3` that's **~$98/month base**, before any data processing. Verified via AWS's own pricing page, since this differs from how a single zonal NAT Gateway is billed. |
 | 2 Gateway VPC Endpoints (S3, DynamoDB) | on | $0 |
 | 7 Interface VPC Endpoints (KMS, SSM×3, Secrets Manager, CloudWatch Logs, STS) | **off** | ~$22 each if enabled (~$154 for all 7), before data processing |
 | VPC Encryption Controls | **off** | $0 while empty; **~$0.15/hour (~$110/month) in us-east-1** once real resources are deployed, regardless of mode |
