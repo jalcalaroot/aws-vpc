@@ -45,12 +45,36 @@ Two workload NACLs (`public`, and one `private` NACL shared by `compute`+`data`)
 
 Per the same AWS Transit Gateway best-practice guide: a TGW attachment subnet only ever hosts the attachment's single ENI, so a `/28` (16 addresses) is the recommended size — no reason to burn a `/24` on it. Carved from a separate `/24` block (`cidrsubnet(vpc_cidr, 8, 250)`) so it doesn't compete for address space with the three `/24`-per-AZ workload tiers.
 
-### VPC Endpoints: S3 (free) and KMS (real cost, opt-in)
+### VPC Endpoints: 2 free Gateway, 7 real-cost Interface
 
-Keeps AWS API traffic on the AWS backbone instead of routing through the NAT Gateway or the public internet — reduces both NAT data-processing cost and public attack surface.
+Keeps AWS API traffic on the AWS backbone instead of routing through the NAT Gateway or the public internet — reduces both NAT data-processing cost and public attack surface. Every one of these is individually togglable — see `variables.tf`.
 
-- **S3** (`enable_s3_endpoint`, default `true`): Gateway endpoint, genuinely free (no hourly charge, no per-GB charge), associated with the `compute` and `data` route tables.
-- **KMS** (`enable_kms_endpoint`, default `true`): Interface endpoint — **has a real recurring cost**, ~$0.01/hour per AZ + $0.01/GB processed. With 3 AZs that's roughly **$22/month before any data transfer**. One ENI per AZ, placed in the `compute` subnets only (Interface endpoints are reachable VPC-wide, not just from the subnet the ENI lives in, so `data` doesn't need its own ENIs too). Toggle it off if nothing in the VPC is calling the KMS API often enough to justify the cost.
+**Gateway (free — no hourly charge, no per-GB charge):**
+
+| Endpoint | Variable | Associated with |
+|---|---|---|
+| S3 | `enable_s3_endpoint` (default `true`) | `compute` + `data` route tables |
+| DynamoDB | `enable_dynamodb_endpoint` (default `true`) | `compute` + `data` route tables |
+
+**Interface (real recurring cost — ~$0.01/hour *per AZ* + $0.01/GB processed. With 3 AZs, each one is roughly $22/month before any data transfer):**
+
+| Endpoint(s) | Variable | Why |
+|---|---|---|
+| KMS | `enable_kms_endpoint` | Encryption operations (EBS, Secrets Manager, etc.) |
+| SSM + SSM Messages + EC2 Messages (all 3 together) | `enable_ssm_endpoints` | Enables **Session Manager** — access EC2 instances in private subnets without a bastion host or exposed SSH. All 3 are required together for Session Manager to work; toggling this one variable controls all 3. |
+| Secrets Manager | `enable_secretsmanager_endpoint` | App/DB credential retrieval |
+| CloudWatch Logs | `enable_cloudwatch_logs_endpoint` | App logging (the VPC Flow Logs in this module do *not* need this — they're published by the AWS platform itself, not from an instance inside the VPC) |
+| STS | `enable_sts_endpoint` | `sts:AssumeRole` from inside the VPC |
+
+All default to `true`, but **turning on every Interface endpoint costs roughly $154/month in hourly charges alone** (7 endpoints × ~$22), before any data processing. Turn off what you don't have workloads for yet — there's no cost to re-enabling one later when something actually needs it. One shared security group (`aws_security_group.interface_endpoints`) handles all of them; they all live in the `compute` subnets (Interface endpoints are reachable VPC-wide, not just from the subnet the ENI lives in, so `data` doesn't need its own ENIs too).
+
+### VPC Encryption Controls
+
+[AWS VPC Encryption Controls](https://aws.amazon.com/blogs/aws/introducing-vpc-encryption-controls-enforce-encryption-in-transit-within-and-across-vpcs-in-a-region/) (launched Nov 2025) audits (`monitor`) or enforces (`enforce`) encryption in transit for traffic within and across VPCs in the Region — the AWS equivalent of what [`azure-virtual-network`](https://github.com/jalcalaroot/azure-virtual-network) covers with Azure VNet encryption.
+
+- Controlled by `enable_encryption_control` (default `true`) and `encryption_control_mode` (default `"monitor"` — audits only, zero risk of blocking traffic).
+- **Cost**: free while the VPC is *empty* (no real resources deployed). Once something real is running in it, [AWS charges a fixed hourly rate per VPC](https://aws.amazon.com/about-aws/whats-new/2026/03/vpc-encryption-controls-pricing/) regardless of monitor/enforce mode — the free introductory period (Nov 2025 – Feb 2026) has already ended.
+- If you ever switch `encryption_control_mode` to `"enforce"`, this module automatically excludes NAT Gateway and Internet Gateway traffic from enforcement — traffic leaving to the public internet can't be encrypted by this AWS-backbone-only mechanism, so enforcing on it would just break egress.
 
 ### Flow logs: CloudWatch, AWS-managed encryption
 
@@ -61,12 +85,26 @@ Flow logs go to CloudWatch Logs (not S3) for real-time querying via Logs Insight
 Reviewed against the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html) security pillar guidance (fetched live via docs search, not from memory). Findings addressed here:
 
 - ✅ No NACLs at all before this redesign (default allow-all NACL only) — now has purpose-built NACLs per tier group.
-- ✅ No VPC Endpoints — traffic to AWS services went through the NAT Gateway or public internet — now has S3 (free) and KMS (opt-in) endpoints.
+- ✅ No VPC Endpoints — traffic to AWS services went through the NAT Gateway or public internet — now has 9 endpoints covering the most commonly needed AWS services.
+- ✅ No encryption-in-transit story — now has VPC Encryption Controls in `monitor` mode.
 - Already compliant before this redesign: default security group locked down (CIS AWS Benchmark), VPC Flow Logs enabled, no auto-assigned public IPs on private-tier subnets.
+
+## Cost summary (everything enabled by default)
+
+| Item | Approx. monthly cost |
+|---|---|
+| Regional NAT Gateway | ~$32 base + data processing |
+| 7 Interface VPC Endpoints | ~$154 (hourly only, before data processing) |
+| 2 Gateway VPC Endpoints (S3, DynamoDB) | $0 |
+| VPC Encryption Controls | $0 while empty; fixed hourly rate once real resources are deployed |
+| Flow logs (CloudWatch, AWS-managed key) | Storage/ingestion only, no encryption surcharge |
+
+This is a lot for a learning account with nothing deployed yet — the Interface endpoint variables exist specifically so you can turn off what you don't need until you actually have workloads that call those APIs.
 
 ## Status
 
-- 2026-09-02: Full redesign — 3 AZs, 4 tiers (public/compute/data/transit), regional NAT Gateway, 3 NACLs, S3 + KMS VPC endpoints. Validated end-to-end with a real `terraform plan` against the `jalcalaroot` AWS account (55 resources, clean) — not applied.
-- 2026-09-02 (earlier): Migrated from `jalcalaroot-aws-bootstrap/terraform/modules/vpc`, tagged `v0.1.0`.
+- 2026-09-02: Added DynamoDB Gateway endpoint, 5 more Interface endpoints (SSM/SSM Messages/EC2 Messages, Secrets Manager, CloudWatch Logs, STS — 7 Interface endpoints total with KMS), and VPC Encryption Controls in `monitor` mode. Validated end-to-end with a real `terraform plan` (63 resources, clean) — not applied.
+- 2026-09-02 (earlier): Full redesign — 3 AZs, 4 tiers (public/compute/data/transit), regional NAT Gateway, 3 NACLs. 55 resources, clean plan.
+- 2026-09-02 (earlier still): Migrated from `jalcalaroot-aws-bootstrap/terraform/modules/vpc`, tagged `v0.1.0`.
 
 See `CLAUDE.md` for conventions and session history.

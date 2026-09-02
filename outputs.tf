@@ -48,6 +48,15 @@ output "s3_vpc_endpoint_id" {
   value = var.enable_s3_endpoint ? aws_vpc_endpoint.s3[0].id : null
 }
 
-output "kms_vpc_endpoint_id" {
-  value = var.enable_kms_endpoint ? aws_vpc_endpoint.kms[0].id : null
+output "dynamodb_vpc_endpoint_id" {
+  value = var.enable_dynamodb_endpoint ? aws_vpc_endpoint.dynamodb[0].id : null
+}
+
+output "interface_vpc_endpoint_ids" {
+  description = "Map de servicio -> endpoint id, para los Interface Endpoints activos (kms, ssm, ssmmessages, ec2messages, secretsmanager, logs, sts)"
+  value       = { for k, ep in aws_vpc_endpoint.interface : k => ep.id }
+}
+
+output "encryption_control_id" {
+  value = var.enable_encryption_control ? aws_vpc_encryption_control.this[0].id : null
 }
