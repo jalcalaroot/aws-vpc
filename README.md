@@ -66,14 +66,14 @@ Keeps AWS API traffic on the AWS backbone instead of routing through the NAT Gat
 | CloudWatch Logs | `enable_cloudwatch_logs_endpoint` | App logging (the VPC Flow Logs in this module do *not* need this — they're published by the AWS platform itself, not from an instance inside the VPC) |
 | STS | `enable_sts_endpoint` | `sts:AssumeRole` from inside the VPC |
 
-All default to `true`, but **turning on every Interface endpoint costs roughly $154/month in hourly charges alone** (7 endpoints × ~$22), before any data processing. Turn off what you don't have workloads for yet — there's no cost to re-enabling one later when something actually needs it. One shared security group (`aws_security_group.interface_endpoints`) handles all of them; they all live in the `compute` subnets (Interface endpoints are reachable VPC-wide, not just from the subnet the ENI lives in, so `data` doesn't need its own ENIs too).
+**All default to `false` — opt-in only.** Turning on every Interface endpoint costs roughly $154/month in hourly charges alone (7 endpoints × ~$22), before any data processing, so nothing here turns on by itself; enable each one explicitly at deployment time once a real workload actually needs it. One shared security group (`aws_security_group.interface_endpoints`) handles all of them; they all live in the `compute` subnets (Interface endpoints are reachable VPC-wide, not just from the subnet the ENI lives in, so `data` doesn't need its own ENIs too).
 
 ### VPC Encryption Controls
 
 [AWS VPC Encryption Controls](https://aws.amazon.com/blogs/aws/introducing-vpc-encryption-controls-enforce-encryption-in-transit-within-and-across-vpcs-in-a-region/) (launched Nov 2025) audits (`monitor`) or enforces (`enforce`) encryption in transit for traffic within and across VPCs in the Region — the AWS equivalent of what [`azure-virtual-network`](https://github.com/jalcalaroot/azure-virtual-network) covers with Azure VNet encryption.
 
-- Controlled by `enable_encryption_control` (default `true`) and `encryption_control_mode` (default `"monitor"` — audits only, zero risk of blocking traffic).
-- **Cost**: free while the VPC is *empty* (no real resources deployed). Once something real is running in it, [AWS charges a fixed hourly rate per VPC](https://aws.amazon.com/about-aws/whats-new/2026/03/vpc-encryption-controls-pricing/) regardless of monitor/enforce mode — the free introductory period (Nov 2025 – Feb 2026) has already ended.
+- Controlled by `enable_encryption_control` (**default `false` — opt-in**) and `encryption_control_mode` (default `"monitor"` — audits only, zero risk of blocking traffic, for whenever it's turned on).
+- **Cost**: free while the VPC is *empty* (no real resources deployed). Once something real is running in it, **$0.15/hour per VPC in us-east-1** (~$110/month; up to $0.31/hour in some other regions — [see pricing announcement](https://aws.amazon.com/about-aws/whats-new/2026/03/vpc-encryption-controls-pricing/)), regardless of monitor/enforce mode. The free introductory period (Nov 2025 – Feb 2026) has already ended — that real number is why this defaults off.
 - If you ever switch `encryption_control_mode` to `"enforce"`, this module automatically excludes NAT Gateway and Internet Gateway traffic from enforcement — traffic leaving to the public internet can't be encrypted by this AWS-backbone-only mechanism, so enforcing on it would just break egress.
 
 ### Flow logs: CloudWatch, AWS-managed encryption
@@ -89,17 +89,17 @@ Reviewed against the [AWS Well-Architected Framework](https://docs.aws.amazon.co
 - ✅ No encryption-in-transit story — now has VPC Encryption Controls in `monitor` mode.
 - Already compliant before this redesign: default security group locked down (CIS AWS Benchmark), VPC Flow Logs enabled, no auto-assigned public IPs on private-tier subnets.
 
-## Cost summary (everything enabled by default)
+## Cost summary
 
-| Item | Approx. monthly cost |
-|---|---|
-| Regional NAT Gateway | ~$32 base + data processing |
-| 7 Interface VPC Endpoints | ~$154 (hourly only, before data processing) |
-| 2 Gateway VPC Endpoints (S3, DynamoDB) | $0 |
-| VPC Encryption Controls | $0 while empty; fixed hourly rate once real resources are deployed |
-| Flow logs (CloudWatch, AWS-managed key) | Storage/ingestion only, no encryption surcharge |
+| Item | Default | Approx. monthly cost |
+|---|---|---|
+| Regional NAT Gateway | always on (no toggle) | ~$32 base + data processing |
+| 2 Gateway VPC Endpoints (S3, DynamoDB) | on | $0 |
+| 7 Interface VPC Endpoints (KMS, SSM×3, Secrets Manager, CloudWatch Logs, STS) | **off** | ~$22 each if enabled (~$154 for all 7), before data processing |
+| VPC Encryption Controls | **off** | $0 while empty; **~$0.15/hour (~$110/month) in us-east-1** once real resources are deployed, regardless of mode |
+| Flow logs (CloudWatch, AWS-managed key) | on (no toggle) | Storage/ingestion only, no encryption surcharge |
 
-This is a lot for a learning account with nothing deployed yet — the Interface endpoint variables exist specifically so you can turn off what you don't need until you actually have workloads that call those APIs.
+Everything with a real recurring cost defaults to **off** — the only things a fresh `terraform apply` of this module creates that aren't free are the NAT Gateway and flow-log storage. Turn on Interface endpoints and Encryption Controls explicitly, per-project, once there's an actual workload that needs them.
 
 ## Status
 
