@@ -1,0 +1,23 @@
+name: gitleaks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # historial completo, no solo el último commit
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Sin GITLEAKS_LICENSE: no requerida para cuentas personales
+          # (jalcalaroot no es una organización de GitHub).
