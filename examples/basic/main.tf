@@ -31,5 +31,5 @@ module "vpc" {
 
   name     = "jalcalaroot-dev"
   vpc_cidr = "10.0.0.0/16"
-  az_count = 2
+  # az_count no se pasa - usa el default del módulo (3 AZs)
 }
