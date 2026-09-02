@@ -34,8 +34,17 @@ Added after the initial redesign, on request: DynamoDB Gateway endpoint, and 5 m
 
 **Initial default was `enable_encryption_control = true` and all Interface endpoints `true`** — changed to `false` (opt-in) across the board once the *exact* price was looked up: **$0.15/hour per VPC in us-east-1 (~$110/month)** once the VPC has any real resource in it, regardless of mode. That single line item alone would have cost more than all 7 Interface endpoints combined (~$154/month). User's own words when correcting this: "quitarlo y los endpoints también, solo deja los gratuitos, y los de costos opcionales al momento del despliegue" — this repo's baseline philosophy now: **nothing with a real recurring cost is on by default**, not even something as security-valuable as encryption-in-transit auditing. Don't flip any `enable_*` cost variable back to `true` by default without that being a deliberate, explicit decision.
 
+## DevSecOps CI hardening (2026-09-02, `v0.4.0` → `v0.5.0`)
+
+Workspace-wide audit found this repo's CI running only `fmt`+`validate` — the weakest gate of any repo despite defining the actual deployed resources. Added `tflint` (aws ruleset) + Checkov (blocking) to `terraform-validate.yml`, plus a standalone `gitleaks` workflow. Also enabled GitHub branch protection on `main` (free — this is a public repo) requiring both `fmt + validate` and `gitleaks` to pass; direct pushes to `main` are no longer possible even locally.
+
+Found and fixed one real issue while getting Checkov clean: `aws_security_group.interface_endpoints`'s egress was `0.0.0.0/0` on all ports with no rule description — scoped to `var.vpc_cidr` on 443 instead (endpoint ENIs only ever respond within the VPC, never initiate outbound traffic). No functional impact on the deployed `jalcalaroot-dev` VPC — interface endpoints are all off by default there.
+
+12 Checkov exceptions on the NACLs, all pre-existing intentional design (documented inline with `#checkov:skip`): transit NACL wide-open per AWS's own TGW guidance, shared private NACL by design, ephemeral port ranges (1024-65535) false-flagged against well-known ports like 3389, and `subnet_ids` set via splat (`aws_subnet.x[*].id`) not resolved by Checkov's graph analysis (`CKV2_AWS_1` false positive — verify the real association with `aws ec2 describe-network-acls` if ever in doubt).
+
 ## Status
 
+- 2026-09-02: DevSecOps hardening - tflint+Checkov+gitleaks in CI, branch protection on `main`, interface-endpoint SG egress tightened. Tagged `v0.5.0`.
 - 2026-09-02: Flipped every cost-incurring `enable_*` variable to default `false` (Interface endpoints, encryption control) after pricing out VPC Encryption Controls exactly (~$110/month, not just "a fixed hourly rate"). Only the free Gateway endpoints (S3, DynamoDB) default `true`. Re-validated (55 resources by default now, matching the pre-endpoint-expansion count).
 - 2026-09-02 (earlier, same day): Added DynamoDB Gateway endpoint + 5 more Interface endpoints + VPC Encryption Controls, all defaulting `true` at the time. Validated with a real `terraform plan` (63 resources, clean, not applied). Tagged `v0.3.0` — that tag predates the default flip above, so `v0.3.0`'s defaults are more expensive than what's currently on `main`. Not yet re-tagged or wired into `jalcalaroot-aws-bootstrap/environments/dev`.
 - 2026-09-02 (earlier still): Full Well-Architected redesign (regional NAT, 4 tiers, 3 NACLs). 55 resources, clean plan. Tagged `v0.2.0`.
