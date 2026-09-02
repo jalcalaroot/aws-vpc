@@ -17,7 +17,7 @@ Reusable Terraform module for the AWS network layer used by the `jalcalaroot` ac
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/jalcalaroot/aws-vpc.git?ref=v0.4.0"
+  source = "git::https://github.com/jalcalaroot/aws-vpc.git?ref=v0.5.0"
 
   name     = "jalcalaroot-dev"
   vpc_cidr = "10.0.0.0/16"
@@ -103,6 +103,7 @@ Everything with a real recurring cost defaults to **off** — the only things a 
 
 ## Status
 
+- 2026-09-02: CI hardened — `tflint` + Checkov (blocking) added alongside `fmt`+`validate`, plus `gitleaks` secret scanning. Branch protection enabled on `main`. Fixed the interface-endpoint security group's overly broad egress along the way. Tagged `v0.5.0`.
 - 2026-09-02: Added DynamoDB Gateway endpoint, 5 more Interface endpoints (SSM/SSM Messages/EC2 Messages, Secrets Manager, CloudWatch Logs, STS — 7 Interface endpoints total with KMS), and VPC Encryption Controls in `monitor` mode. Validated end-to-end with a real `terraform plan` (63 resources, clean) — not applied.
 - 2026-09-02 (earlier): Full redesign — 3 AZs, 4 tiers (public/compute/data/transit), regional NAT Gateway, 3 NACLs. 55 resources, clean plan.
 - 2026-09-02 (earlier still): Migrated from `jalcalaroot-aws-bootstrap/terraform/modules/vpc`, tagged `v0.1.0`.
