@@ -13,6 +13,40 @@
 # --------------------------------------------------------------------------
 
 data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+# Política por defecto para todos los VPC Endpoints de este módulo: permite
+# todo (no restringe acciones/recursos específicos, ya que es un módulo
+# genérico que no sabe de antemano qué buckets/roles/tablas se van a usar),
+# pero exige que el principal que llama pertenezca a esta misma cuenta AWS -
+# guardrail estándar recomendado por AWS para evitar que credenciales
+# comprometidas dentro de la VPC exfiltren datos hacia recursos de una
+# cuenta ajena (ver "Limit access to Amazon S3 buckets owned by specific AWS
+# accounts", AWS Storage Blog). Es un guardrail (techo de permisos), no un
+# grant - no otorga acceso por sí sola, solo acota lo que el IAM del llamador
+# ya permite.
+data "aws_iam_policy_document" "endpoint_same_account_only" {
+  #checkov:skip=CKV_AWS_49:falso positivo - esto es una VPC Endpoint Policy (un techo/guardrail sobre qué principal puede USAR el endpoint), no una policy IAM de identidad que otorga permisos. actions=["*"] acá es intencional: el endpoint no debe restringir QUÉ se puede hacer (eso ya lo controla el IAM del principal que llama), solo DESDE QUÉ CUENTA se puede llamar.
+  #checkov:skip=CKV_AWS_1:mismo motivo que CKV_AWS_49 - este check está pensado para policies de identidad/recurso, no para VPC Endpoint Policies.
+  #checkov:skip=CKV2_AWS_40:mismo motivo que CKV_AWS_49 - no es una policy IAM de identidad, es un guardrail de VPC Endpoint condicionado a aws:PrincipalAccount.
+  statement {
+    sid       = "RestrictToOwnAccount"
+    effect    = "Allow"
+    actions   = ["*"]
+    resources = ["*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
 
 # --- Gateway Endpoints (gratis) ---
 
@@ -23,6 +57,7 @@ resource "aws_vpc_endpoint" "s3" {
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
+  policy            = data.aws_iam_policy_document.endpoint_same_account_only.json
 
   tags = {
     Name = "${var.name}-s3-endpoint"
@@ -36,6 +71,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
   service_name      = "com.amazonaws.${data.aws_region.current.region}.dynamodb"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
+  policy            = data.aws_iam_policy_document.endpoint_same_account_only.json
 
   tags = {
     Name = "${var.name}-dynamodb-endpoint"
@@ -70,6 +106,13 @@ resource "aws_vpc_endpoint" "interface" {
   subnet_ids          = aws_subnet.compute[*].id
   security_group_ids  = [aws_security_group.interface_endpoints.id]
   private_dns_enabled = true
+  # Mismo guardrail same-account-only que los Gateway endpoints. Ojo si se
+  # activa enable_sts_endpoint junto con un caso de uso real de
+  # sts:AssumeRole hacia OTRA cuenta AWS (p.ej. asumir un rol en una cuenta
+  # de seguridad/logging centralizada) - esta política lo bloquearía. Si se
+  # necesita eso, pasar un `policy` distinto (o null para acceso completo)
+  # al desplegar, no cambiar el default de este módulo.
+  policy = data.aws_iam_policy_document.endpoint_same_account_only.json
 
   tags = {
     Name = "${var.name}-${each.key}-endpoint"
