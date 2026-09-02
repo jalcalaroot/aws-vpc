@@ -15,6 +15,7 @@
 # --- Pública: solo 80/443 desde Internet + ephemeral de retorno ---
 
 resource "aws_network_acl" "public" {
+  #checkov:skip=CKV2_AWS_1:falso positivo - subnet_ids se resuelve vía splat (aws_subnet.public[*].id), Checkov no sigue esa expresión en su grafo pero la asociación es real (verificar con `aws ec2 describe-network-acls`).
   vpc_id     = aws_vpc.this.id
   subnet_ids = aws_subnet.public[*].id
 
@@ -46,6 +47,7 @@ resource "aws_network_acl_rule" "public_in_http" {
 }
 
 resource "aws_network_acl_rule" "public_in_ephemeral" {
+  #checkov:skip=CKV_AWS_231:rango ephemeral de retorno (1024-65535), no una regla de acceso a RDP - Checkov marca falso positivo por solapar con el puerto 3389.
   network_acl_id = aws_network_acl.public.id
   rule_number    = 120
   egress         = false
@@ -95,6 +97,7 @@ resource "aws_network_acl_rule" "public_out_ephemeral" {
 # que ya hacen los security groups) ---
 
 resource "aws_network_acl" "private" {
+  #checkov:skip=CKV2_AWS_1:falso positivo - mismo caso que aws_network_acl.public, subnet_ids vía concat()+splat no lo sigue el grafo de Checkov.
   vpc_id     = aws_vpc.this.id
   subnet_ids = concat(aws_subnet.compute[*].id, aws_subnet.data[*].id)
 
@@ -104,6 +107,7 @@ resource "aws_network_acl" "private" {
 }
 
 resource "aws_network_acl_rule" "private_in_vpc" {
+  #checkov:skip=CKV_AWS_352:por diseño - la NACL privada es deliberadamente permisiva intra-VPC (el enforcement fino vive en los security groups de cada consumidor, ver el comentario de diseño al inicio de este archivo).
   network_acl_id = aws_network_acl.private.id
   rule_number    = 100
   egress         = false
@@ -115,6 +119,7 @@ resource "aws_network_acl_rule" "private_in_vpc" {
 }
 
 resource "aws_network_acl_rule" "private_in_ephemeral" {
+  #checkov:skip=CKV_AWS_231:rango ephemeral de retorno (1024-65535), no una regla de acceso a RDP - mismo falso positivo que public_in_ephemeral.
   network_acl_id = aws_network_acl.private.id
   rule_number    = 110
   egress         = false
@@ -162,6 +167,7 @@ resource "aws_network_acl_rule" "private_out_http" {
 # subnets de Transit Gateway attachment (ver subnets_transit.tf) ---
 
 resource "aws_network_acl" "transit" {
+  #checkov:skip=CKV2_AWS_1:falso positivo - mismo caso que aws_network_acl.public, subnet_ids vía splat no lo sigue el grafo de Checkov.
   vpc_id     = aws_vpc.this.id
   subnet_ids = aws_subnet.transit[*].id
 
@@ -171,6 +177,11 @@ resource "aws_network_acl" "transit" {
 }
 
 resource "aws_network_acl_rule" "transit_in_all" {
+  #checkov:skip=CKV_AWS_229:por diseño - AWS pide explícitamente que las subnets de Transit Gateway attachment queden abiertas en ambos sentidos, ver comentario de diseño al inicio de este archivo y subnets_transit.tf.
+  #checkov:skip=CKV_AWS_230:por diseño - mismo motivo que CKV_AWS_229.
+  #checkov:skip=CKV_AWS_231:por diseño - mismo motivo que CKV_AWS_229.
+  #checkov:skip=CKV_AWS_232:por diseño - mismo motivo que CKV_AWS_229.
+  #checkov:skip=CKV_AWS_352:por diseño - mismo motivo que CKV_AWS_229.
   network_acl_id = aws_network_acl.transit.id
   rule_number    = 100
   egress         = false

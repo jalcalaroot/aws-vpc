@@ -34,3 +34,19 @@ jobs:
         run: |
           terraform init -input=false
           terraform validate
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          soft_fail: false # bloqueante — findings aceptados quedan documentados con #checkov:skip inline
