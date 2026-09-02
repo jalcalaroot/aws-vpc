@@ -18,4 +18,4 @@ Once tagged, `jalcalaroot-aws-bootstrap/environments/dev` should point its VPC m
 
 ## Status
 
-- 2026-09-02: Migrated from `jalcalaroot-aws-bootstrap`. Validated end-to-end with a real `terraform plan` against the `jalcalaroot` AWS account (19 resources, clean, not applied). Not tagged/released yet.
+- 2026-09-02: Migrated from `jalcalaroot-aws-bootstrap`. Validated end-to-end with a real `terraform plan` against the `jalcalaroot` AWS account (19 resources, clean, not applied). Tagged `v0.1.0`. Not yet wired into `jalcalaroot-aws-bootstrap/environments/dev` — that's the next step whenever real deployment is wanted (creates a NAT Gateway - real cost, ~$32/month + data processing).
