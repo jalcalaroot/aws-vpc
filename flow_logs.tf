@@ -49,6 +49,16 @@ resource "aws_flow_log" "this" {
   log_destination      = aws_cloudwatch_log_group.flow_logs.arn
   iam_role_arn         = aws_iam_role.flow_logs.arn
 
+  # Formato enriquecido (v5) en vez del default v2 - agrega vpc-id/subnet-id/
+  # instance-id (útil filtrando por tier en un solo VPC), tcp-flags (detecta
+  # intentos de SYN scan), pkt-srcaddr/pkt-dstaddr (la IP real detrás de un
+  # NAT Gateway o Interface Endpoint - srcaddr/dstaddr solo, no alcanza para
+  # rastrear origen/destino real de tráfico que pasa por esos), y
+  # region/az-id/flow-direction/traffic-path para diferenciar tráfico que
+  # sale por IGW vs NAT vs peering. Costo marginal (más bytes por línea de
+  # log), beneficio de investigación real.
+  log_format = "$${version} $${account-id} $${vpc-id} $${subnet-id} $${instance-id} $${interface-id} $${srcaddr} $${dstaddr} $${srcport} $${dstport} $${protocol} $${packets} $${bytes} $${start} $${end} $${action} $${log-status} $${type} $${tcp-flags} $${pkt-srcaddr} $${pkt-dstaddr} $${pkt-src-aws-service} $${pkt-dst-aws-service} $${region} $${az-id} $${flow-direction} $${traffic-path}"
+
   tags = {
     Name = "${var.name}-flow-log"
   }
