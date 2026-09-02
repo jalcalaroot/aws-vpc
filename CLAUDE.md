@@ -16,6 +16,17 @@ That module already exists and works there (used for a real dev deployment, sinc
 
 Once tagged, `jalcalaroot-aws-bootstrap/environments/dev` should point its VPC module source here instead of the local path, and the in-repo copy can be removed.
 
+## Well-Architected redesign (2026-09-02, `v0.1.0` → `v0.2.0`)
+
+Reviewed the `v0.1.0` module against the AWS Well-Architected Framework security pillar (fetched live via the AWS MCP docs search, not from memory) and rebuilt it. Full rationale is in the README — key points to remember here:
+
+- **Regional NAT Gateway** (`nat.tf`) replaced the old single zonal NAT Gateway. This is a real AWS feature launched Nov 2025 (`aws_nat_gateway` with `availability_mode = "regional"`) — verified via `get_provider_details` on the Terraform provider docs before writing any code, not assumed. Needs AWS provider `>= 6.x` (recent point release — validated with 6.62.0). No `subnet_id`/`allocation_id` on this resource; it attaches to the VPC directly and auto-manages EIPs/AZ coverage.
+- **Tiers went from 2 to 4**: `public`/`compute`/`data`/`transit`. `data` has zero internet route (not just an SG restriction) — mirrors `azure-virtual-network`'s `rt-data` design for consistency across both clouds. `transit` exists solely for a Transit Gateway VPC attachment.
+- **NACLs**: 3, not 1-per-tier. `transit` NACL is deliberately wide open both directions — verified this is AWS's own explicit guidance (not a guess) via `search_documentation` on the TGW design best-practices guide before implementing it as permissive.
+- **KMS interface endpoint has a real monthly cost** (~$22/month for 3 AZs before data transfer) — it's opt-in (`enable_kms_endpoint`, defaults to `true` but toggleable) specifically because of that cost. Don't add more Interface endpoints without checking their per-AZ hourly cost first; Gateway endpoints (S3, DynamoDB) are free and shouldn't need the same scrutiny.
+- **No CMK for the flow-logs log group**, on purpose — user explicitly corrected an earlier "let's add a CMK" direction to "always use AWS's managed keys, avoid unnecessary cost." Don't reintroduce a customer-managed KMS key here without that decision being revisited deliberately.
+
 ## Status
 
-- 2026-09-02: Migrated from `jalcalaroot-aws-bootstrap`. Validated end-to-end with a real `terraform plan` against the `jalcalaroot` AWS account (19 resources, clean, not applied). Tagged `v0.1.0`. Not yet wired into `jalcalaroot-aws-bootstrap/environments/dev` — that's the next step whenever real deployment is wanted (creates a NAT Gateway - real cost, ~$32/month + data processing).
+- 2026-09-02: Full redesign per the Well-Architected review above. Validated end-to-end with a real `terraform plan` against the `jalcalaroot` AWS account (55 resources, clean, not applied). Not yet tagged as `v0.2.0` or wired into `jalcalaroot-aws-bootstrap/environments/dev` — that's the next step whenever real deployment is wanted (creates a NAT Gateway + KMS Interface endpoint — real recurring cost).
+- 2026-09-02 (earlier): Migrated from `jalcalaroot-aws-bootstrap`, tagged `v0.1.0` (superseded by the redesign above).
