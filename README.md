@@ -17,7 +17,7 @@ Reusable Terraform module for the AWS network layer used by the `jalcalaroot` ac
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/jalcalaroot/aws-vpc.git?ref=v0.3.0"
+  source = "git::https://github.com/jalcalaroot/aws-vpc.git?ref=v0.4.0"
 
   name     = "jalcalaroot-dev"
   vpc_cidr = "10.0.0.0/16"
