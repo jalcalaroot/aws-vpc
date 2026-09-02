@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write # gitleaks-action comenta hallazgos en el PR
+
 jobs:
   scan:
     name: gitleaks
