@@ -34,46 +34,48 @@ variable "enable_dynamodb_endpoint" {
 }
 
 # --- Interface Endpoints: cada uno ronda ~$22/mes (3 AZs x ~$0.01/hora) +
-# $0.01/GB procesado, ANTES de cualquier tráfico. Si activás los 5 grupos de
-# abajo (kms, ssm x3, secretsmanager, logs, sts = 7 endpoints), son
-# ~$154/mes solo en cargo por hora. Apagá los que no uses todavía. ---
+# $0.01/GB procesado, ANTES de cualquier tráfico. Todos default false a
+# propósito - opt-in explícito al momento del despliegue, no algo que se
+# activa solo. Si activás los 5 grupos de abajo (kms, ssm x3,
+# secretsmanager, logs, sts = 7 endpoints), son ~$154/mes solo en cargo por
+# hora. ---
 
 variable "enable_kms_endpoint" {
-  description = "Interface Endpoint a KMS (~$22/mes, 3 AZs). Útil si algo en la VPC llama seguido a la API de KMS (cifrado de EBS, Secrets Manager, etc.)."
+  description = "Interface Endpoint a KMS (~$22/mes, 3 AZs). Útil si algo en la VPC llama seguido a la API de KMS (cifrado de EBS, Secrets Manager, etc.). Opt-in - default false."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_ssm_endpoints" {
-  description = "Interface Endpoints a SSM + SSM Messages + EC2 Messages (~$66/mes, 3 endpoints x 3 AZs). Habilita Session Manager - acceso a instancias EC2 en subnets privadas sin bastion host ni SSH expuesto. El trío completo es obligatorio para que Session Manager funcione (no alcanza con activar solo uno)."
+  description = "Interface Endpoints a SSM + SSM Messages + EC2 Messages (~$66/mes, 3 endpoints x 3 AZs). Habilita Session Manager - acceso a instancias EC2 en subnets privadas sin bastion host ni SSH expuesto. El trío completo es obligatorio para que Session Manager funcione (no alcanza con activar solo uno). Opt-in - default false."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_secretsmanager_endpoint" {
-  description = "Interface Endpoint a Secrets Manager (~$22/mes, 3 AZs). Para apps/DBs que leen credenciales desde ahí sin salir por el NAT."
+  description = "Interface Endpoint a Secrets Manager (~$22/mes, 3 AZs). Para apps/DBs que leen credenciales desde ahí sin salir por el NAT. Opt-in - default false."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_cloudwatch_logs_endpoint" {
-  description = "Interface Endpoint a CloudWatch Logs (~$22/mes, 3 AZs). Para que apps en compute logueen a CloudWatch sin salir por el NAT (los VPC Flow Logs de este módulo NO lo necesitan - los publica el propio plano de AWS, no una instancia dentro de la VPC)."
+  description = "Interface Endpoint a CloudWatch Logs (~$22/mes, 3 AZs). Para que apps en compute logueen a CloudWatch sin salir por el NAT (los VPC Flow Logs de este módulo NO lo necesitan - los publica el propio plano de AWS, no una instancia dentro de la VPC). Opt-in - default false."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_sts_endpoint" {
-  description = "Interface Endpoint a STS (~$22/mes, 3 AZs). Para sts:AssumeRole sin salir por el NAT - común quan se usan roles IAM desde dentro de la VPC (a menudo junto con SSM)."
+  description = "Interface Endpoint a STS (~$22/mes, 3 AZs). Para sts:AssumeRole sin salir por el NAT - común cuando se usan roles IAM desde dentro de la VPC (a menudo junto con SSM). Opt-in - default false."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # --- VPC Encryption Controls (lanzado nov-2025) ---
 
 variable "enable_encryption_control" {
-  description = "Crear un aws_vpc_encryption_control para esta VPC (auditar/forzar cifrado en tránsito dentro y entre VPCs). Gratis mientras la VPC esté vacía (sin recursos reales corriendo) - empieza a cobrar una tarifa fija por hora en cuanto haya algo desplegado adentro. Ver README para el detalle de precio y de qué tráfico cubre."
+  description = "Crear un aws_vpc_encryption_control para esta VPC (auditar/forzar cifrado en tránsito dentro y entre VPCs). Gratis mientras la VPC esté vacía, pero ~$0.15/hora (~$110/mes en us-east-1) en cuanto haya un recurso real adentro - independiente del modo. Opt-in - default false. Ver README para el detalle de precio y de qué tráfico cubre."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "encryption_control_mode" {
