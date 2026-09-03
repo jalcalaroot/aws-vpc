@@ -45,6 +45,7 @@ Found and fixed one real issue while getting Checkov clean: `aws_security_group.
 
 ## Status
 
+- 2026-09-03: Checkov → SARIF → GitHub Security tab (free, public repo). `.pre-commit-config.yaml` added (gitleaks + `terraform fmt`) so secrets/formatting get caught locally, not just in CI.
 - 2026-09-02: DevSecOps hardening - tflint+Checkov+gitleaks in CI, branch protection on `main`, interface-endpoint SG egress tightened. Tagged `v0.5.0`.
 - 2026-09-02: Flipped every cost-incurring `enable_*` variable to default `false` (Interface endpoints, encryption control) after pricing out VPC Encryption Controls exactly (~$110/month, not just "a fixed hourly rate"). Only the free Gateway endpoints (S3, DynamoDB) default `true`. Re-validated (55 resources by default now, matching the pre-endpoint-expansion count).
 - 2026-09-02 (earlier, same day): Added DynamoDB Gateway endpoint + 5 more Interface endpoints + VPC Encryption Controls, all defaulting `true` at the time. Validated with a real `terraform plan` (63 resources, clean, not applied). Tagged `v0.3.0` — that tag predates the default flip above, so `v0.3.0`'s defaults are more expensive than what's currently on `main`. Not yet re-tagged or wired into `jalcalaroot-aws-bootstrap/environments/dev`.

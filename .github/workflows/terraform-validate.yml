@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write # subir el SARIF de Checkov a la pestaña Security
+
 jobs:
   validate:
     name: fmt + validate
@@ -50,3 +54,11 @@ jobs:
           framework: terraform
           quiet: true
           soft_fail: false # bloqueante — findings aceptados quedan documentados con #checkov:skip inline
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+
+      - name: Subir resultados de Checkov a la pestaña Security
+        if: always() # correr también cuando Checkov falla (soft_fail: false) - ahí es cuando más importa que quede el SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

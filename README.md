@@ -103,6 +103,7 @@ Everything with a real recurring cost defaults to **off** — the only things a 
 
 ## Status
 
+- 2026-09-03: Checkov results now upload as SARIF to the GitHub Security tab (free — public repo). Added `.pre-commit-config.yaml` (gitleaks + `terraform fmt`, catches secrets/formatting before they leave your machine, not just in CI) — run `pip install pre-commit && pre-commit install` once per clone.
 - 2026-09-02: CI hardened — `tflint` + Checkov (blocking) added alongside `fmt`+`validate`, plus `gitleaks` secret scanning. Branch protection enabled on `main`. Fixed the interface-endpoint security group's overly broad egress along the way. Tagged `v0.5.0`.
 - 2026-09-02: Added DynamoDB Gateway endpoint, 5 more Interface endpoints (SSM/SSM Messages/EC2 Messages, Secrets Manager, CloudWatch Logs, STS — 7 Interface endpoints total with KMS), and VPC Encryption Controls in `monitor` mode. Validated end-to-end with a real `terraform plan` (63 resources, clean) — not applied.
 - 2026-09-02 (earlier): Full redesign — 3 AZs, 4 tiers (public/compute/data/transit), regional NAT Gateway, 3 NACLs. 55 resources, clean plan.
