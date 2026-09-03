@@ -43,9 +43,13 @@ Found and fixed one real issue while getting Checkov clean: `aws_security_group.
 
 12 Checkov exceptions on the NACLs, all pre-existing intentional design (documented inline with `#checkov:skip`): transit NACL wide-open per AWS's own TGW guidance, shared private NACL by design, ephemeral port ranges (1024-65535) false-flagged against well-known ports like 3389, and `subnet_ids` set via splat (`aws_subnet.x[*].id`) not resolved by Checkov's graph analysis (`CKV2_AWS_1` false positive — verify the real association with `aws ec2 describe-network-acls` if ever in doubt).
 
+## Gotcha: `#checkov:skip` doesn't dismiss the Security-tab alert
+
+Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — GitHub's code scanning shows them as regular **open** alerts regardless of the inline `#checkov:skip` comment and justification in the `.tf` file. All 15 existing ones were manually dismissed via the API (`gh api -X PATCH repos/jalcalaroot/aws-vpc/code-scanning/alerts/<n> -f state=dismissed -f dismissed_reason="..." -f dismissed_comment="..."`) with a reason (`false positive` for genuine Checkov graph/pattern limitations, `won't fix` for deliberate cost/design decisions) and a comment pointing back to the `.tf` justification. **If a future PR adds a new `#checkov:skip`, its alert will show up open in the Security tab and needs the same manual dismiss** — nothing automates this yet.
+
 ## Status
 
-- 2026-09-03: Checkov → SARIF → GitHub Security tab (free, public repo). `.pre-commit-config.yaml` added (gitleaks + `terraform fmt`) so secrets/formatting get caught locally, not just in CI.
+- 2026-09-03: Checkov → SARIF → GitHub Security tab (free, public repo). `.pre-commit-config.yaml` added (gitleaks + `terraform fmt`) so secrets/formatting get caught locally, not just in CI. All 15 pre-existing Checkov exceptions dismissed in the Security tab with reasons/comments (see gotcha above) — 0 open alerts.
 - 2026-09-02: DevSecOps hardening - tflint+Checkov+gitleaks in CI, branch protection on `main`, interface-endpoint SG egress tightened. Tagged `v0.5.0`.
 - 2026-09-02: Flipped every cost-incurring `enable_*` variable to default `false` (Interface endpoints, encryption control) after pricing out VPC Encryption Controls exactly (~$110/month, not just "a fixed hourly rate"). Only the free Gateway endpoints (S3, DynamoDB) default `true`. Re-validated (55 resources by default now, matching the pre-endpoint-expansion count).
 - 2026-09-02 (earlier, same day): Added DynamoDB Gateway endpoint + 5 more Interface endpoints + VPC Encryption Controls, all defaulting `true` at the time. Validated with a real `terraform plan` (63 resources, clean, not applied). Tagged `v0.3.0` — that tag predates the default flip above, so `v0.3.0`'s defaults are more expensive than what's currently on `main`. Not yet re-tagged or wired into `jalcalaroot-aws-bootstrap/environments/dev`.
