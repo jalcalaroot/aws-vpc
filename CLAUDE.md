@@ -43,6 +43,13 @@ Found and fixed one real issue while getting Checkov clean: `aws_security_group.
 
 12 Checkov exceptions on the NACLs, all pre-existing intentional design (documented inline with `#checkov:skip`): transit NACL wide-open per AWS's own TGW guidance, shared private NACL by design, ephemeral port ranges (1024-65535) false-flagged against well-known ports like 3389, and `subnet_ids` set via splat (`aws_subnet.x[*].id`) not resolved by Checkov's graph analysis (`CKV2_AWS_1` false positive — verify the real association with `aws ec2 describe-network-acls` if ever in doubt).
 
+## Secret scanning: two independent layers
+
+1. **gitleaks** (ours) — runs in CI (`gitleaks.yml`) and locally via pre-commit. Covers all 4 repos in the workspace.
+2. **GitHub's own native secret scanning + push protection** — confirmed `enabled` on this repo via the API (`security_and_analysis.secret_scanning.status`), free for public repos, zero setup from us (it's on by default). Push protection means a push containing a recognized secret pattern gets rejected *before* it lands, not just flagged after. View at Settings → Security → Secret scanning alerts.
+
+Not available on the 2 private bootstrap repos (`jalcalaroot-aws-bootstrap`/`jalcalaroot-azure-bootstrap`) — same GitHub Advanced Security gate as Code scanning/SARIF. gitleaks is the only coverage there.
+
 ## Gotcha: `#checkov:skip` doesn't dismiss the Security-tab alert
 
 Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — GitHub's code scanning shows them as regular **open** alerts regardless of the inline `#checkov:skip` comment and justification in the `.tf` file. All 15 existing ones were manually dismissed via the API (`gh api -X PATCH repos/jalcalaroot/aws-vpc/code-scanning/alerts/<n> -f state=dismissed -f dismissed_reason="..." -f dismissed_comment="..."`) with a reason (`false positive` for genuine Checkov graph/pattern limitations, `won't fix` for deliberate cost/design decisions) and a comment pointing back to the `.tf` justification. **If a future PR adds a new `#checkov:skip`, its alert will show up open in the Security tab and needs the same manual dismiss** — nothing automates this yet.
@@ -50,6 +57,12 @@ Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — 
 ## Supply-chain hardening (2026-09-05)
 
 Every third-party GitHub Action in this repo's workflows is now pinned to a full commit SHA (with a `# vX.Y.Z` comment for readability), per [GitHub's own Actions hardening guide](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) — a tag like `@v4` is mutable; if that upstream repo is ever compromised and the tag moved, our CI would silently run malicious code with our OIDC credentials on the next push. `dependabot.yml` now also watches the `github-actions` ecosystem so these pins get bumped (new SHA + comment) automatically instead of going stale.
+
+## Gotcha: tflint's unauthenticated GitHub API rate limit (real, hit in production)
+
+`tflint --init` fetches ruleset plugins (`aws`, `azurerm`) from the GitHub API. Without a token, that's capped at 60 requests/hour **per IP** — and GitHub-hosted runners share IP pools across every repo/org using them, so this limit gets exhausted by unrelated traffic, not just ours. Broke a real CI run on `azure-virtual-network` on 2026-09-05 with `403 API rate limit exceeded`. Fix: pass `GITHUB_TOKEN: ${{ github.token }}` as an env var on the `tflint` step (raises the limit to 5000/hour, tied to the actual repo token) — already applied here.
+
+**Related bug this exposed**: the SARIF-upload step had `if: always()`, intended to survive a *Checkov* failure (`soft_fail: false` makes it exit non-zero on findings) — but it also ran when an *earlier, unrelated* step failed (like tflint's rate limit), and choked on `results.sarif` not existing, masking the real error in the check summary. Fixed by giving the Checkov step `id: checkov` and changing the upload condition to `if: always() && steps.checkov.outcome != 'skipped'` — still uploads on a real Checkov failure, no longer masks anything upstream of it.
 
 Added `scorecard.yml` ([OSSF Scorecard](https://scorecard.dev/)) — free for public repos, uploads to the same Security tab as Checkov. Audits exactly this kind of practice (pinned dependencies, branch protection, token permissions, dangerous workflow patterns, etc.) automatically on every push, so a future unpinned Action gets flagged without anyone having to remember to check.
 
