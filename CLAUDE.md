@@ -47,8 +47,15 @@ Found and fixed one real issue while getting Checkov clean: `aws_security_group.
 
 Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — GitHub's code scanning shows them as regular **open** alerts regardless of the inline `#checkov:skip` comment and justification in the `.tf` file. All 15 existing ones were manually dismissed via the API (`gh api -X PATCH repos/jalcalaroot/aws-vpc/code-scanning/alerts/<n> -f state=dismissed -f dismissed_reason="..." -f dismissed_comment="..."`) with a reason (`false positive` for genuine Checkov graph/pattern limitations, `won't fix` for deliberate cost/design decisions) and a comment pointing back to the `.tf` justification. **If a future PR adds a new `#checkov:skip`, its alert will show up open in the Security tab and needs the same manual dismiss** — nothing automates this yet.
 
+## Supply-chain hardening (2026-09-05)
+
+Every third-party GitHub Action in this repo's workflows is now pinned to a full commit SHA (with a `# vX.Y.Z` comment for readability), per [GitHub's own Actions hardening guide](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) — a tag like `@v4` is mutable; if that upstream repo is ever compromised and the tag moved, our CI would silently run malicious code with our OIDC credentials on the next push. `dependabot.yml` now also watches the `github-actions` ecosystem so these pins get bumped (new SHA + comment) automatically instead of going stale.
+
+Added `scorecard.yml` ([OSSF Scorecard](https://scorecard.dev/)) — free for public repos, uploads to the same Security tab as Checkov. Audits exactly this kind of practice (pinned dependencies, branch protection, token permissions, dangerous workflow patterns, etc.) automatically on every push, so a future unpinned Action gets flagged without anyone having to remember to check.
+
 ## Status
 
+- 2026-09-05: Supply-chain hardening - all Actions pinned by SHA, Dependabot watching `github-actions`, OSSF Scorecard added. See section above.
 - 2026-09-03: Checkov → SARIF → GitHub Security tab (free, public repo). `.pre-commit-config.yaml` added (gitleaks + `terraform fmt`) so secrets/formatting get caught locally, not just in CI. All 15 pre-existing Checkov exceptions dismissed in the Security tab with reasons/comments (see gotcha above) — 0 open alerts.
 - 2026-09-02: DevSecOps hardening - tflint+Checkov+gitleaks in CI, branch protection on `main`, interface-endpoint SG egress tightened. Tagged `v0.5.0`.
 - 2026-09-02: Flipped every cost-incurring `enable_*` variable to default `false` (Interface endpoints, encryption control) after pricing out VPC Encryption Controls exactly (~$110/month, not just "a fixed hourly rate"). Only the free Gateway endpoints (S3, DynamoDB) default `true`. Re-validated (55 resources by default now, matching the pre-endpoint-expansion count).
