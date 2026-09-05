@@ -43,11 +43,19 @@ jobs:
         uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
 
       - name: tflint
+        env:
+          # sin esto, tflint --init pega contra la API pública de GitHub sin
+          # autenticar (60 req/hora por IP, compartida entre todos los runners
+          # de GitHub Actions) para bajar el plugin de aws - rate limit real,
+          # no hipotético (nos rompió un run en azure-virtual-network el
+          # 2026-09-05). Con el token del propio job sube a 5000/hora.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init
           tflint --recursive
 
       - name: Checkov
+        id: checkov
         uses: bridgecrewio/checkov-action@f967808197a8d784d3e72919f38c3ff0cda7884e # v12.3122.0
         with:
           directory: .
@@ -58,7 +66,13 @@ jobs:
           output_file_path: console,results.sarif
 
       - name: Subir resultados de Checkov a la pestaña Security
-        if: always() # correr también cuando Checkov falla (soft_fail: false) - ahí es cuando más importa que quede el SARIF
+        # correr también cuando Checkov falla (soft_fail: false) - ahí es
+        # cuando más importa que quede el SARIF. Pero NO si un paso anterior
+        # (tflint, validate) ya falló y Checkov ni llegó a correr - ahí
+        # results.sarif no existe y este step rompía con "Path does not
+        # exist" (nos pasó en azure-virtual-network el 2026-09-05, tflint
+        # pegó un rate limit y tapó el error real).
+        if: always() && steps.checkov.outcome != 'skipped'
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: results.sarif
