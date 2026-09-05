@@ -1,5 +1,7 @@
 # aws-vpc
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/jalcalaroot/aws-vpc/badge)](https://scorecard.dev/viewer/?uri=github.com/jalcalaroot/aws-vpc)
+
 Reusable Terraform module for the AWS network layer used by the `jalcalaroot` account's projects. Redesigned 2026-09-02 after a security review against the AWS Well-Architected Framework — see [Design decisions](#design-decisions) for what changed and why.
 
 ## Architecture
@@ -103,6 +105,7 @@ Everything with a real recurring cost defaults to **off** — the only things a 
 
 ## Status
 
+- 2026-09-05: All GitHub Actions pinned to commit SHA (supply-chain hardening), `dependabot.yml` now watches the `github-actions` ecosystem, and added [OSSF Scorecard](https://scorecard.dev/) (badge above) — results at [scorecard.dev/viewer/?uri=github.com/jalcalaroot/aws-vpc](https://scorecard.dev/viewer/?uri=github.com/jalcalaroot/aws-vpc).
 - 2026-09-03: Checkov results now upload as SARIF to the GitHub Security tab (free — public repo). Added `.pre-commit-config.yaml` (gitleaks + `terraform fmt`, catches secrets/formatting before they leave your machine, not just in CI) — run `pip install pre-commit && pre-commit install` once per clone.
 - 2026-09-02: CI hardened — `tflint` + Checkov (blocking) added alongside `fmt`+`validate`, plus `gitleaks` secret scanning. Branch protection enabled on `main`. Fixed the interface-endpoint security group's overly broad egress along the way. Tagged `v0.5.0`.
 - 2026-09-02: Added DynamoDB Gateway endpoint, 5 more Interface endpoints (SSM/SSM Messages/EC2 Messages, Secrets Manager, CloudWatch Logs, STS — 7 Interface endpoints total with KMS), and VPC Encryption Controls in `monitor` mode. Validated end-to-end with a real `terraform plan` (63 resources, clean) — not applied.
