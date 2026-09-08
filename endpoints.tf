@@ -50,42 +50,29 @@ data "aws_iam_policy_document" "endpoint_same_account_only" {
 
 # --- Gateway Endpoints (gratis) ---
 
-# ECR almacena las capas de imagen en un bucket S3 propiedad de AWS
-# (prod-<region>-starport-layer-bucket, no de esta cuenta) y el pull usa
-# URLs pre-firmadas que no llevan el contexto normal de aws:PrincipalAccount
-# del llamador - el guardrail same-account-only de arriba las bloquea con
-# 403 Forbidden, rompiendo cualquier pull de imagen (ECS/EKS/Fargate) que
-# pase por este Gateway Endpoint. Documentado por AWS como fix conocido
-# (repost.aws/knowledge-center/ecs-ecr-docker-image-error): agregar un
-# statement explícito para ese bucket específico, además del guardrail
-# same-account-only genérico - no reemplaza el guardrail, lo complementa.
-data "aws_iam_policy_document" "s3_endpoint" {
-  #checkov:skip=CKV_AWS_49:mismo motivo que endpoint_same_account_only - VPC Endpoint Policy, no IAM de identidad.
-  #checkov:skip=CKV_AWS_1:mismo motivo que endpoint_same_account_only.
-  #checkov:skip=CKV2_AWS_40:mismo motivo que endpoint_same_account_only.
-  source_policy_documents = [data.aws_iam_policy_document.endpoint_same_account_only.json]
-
-  statement {
-    sid       = "AllowEcrImageLayerBucket"
-    effect    = "Allow"
-    actions   = ["s3:GetObject"]
-    resources = ["arn:aws:s3:::prod-${data.aws_region.current.region}-starport-layer-bucket/*"]
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-  }
-}
-
+# SIN policy (default de AWS: acceso completo) a proposito - intentamos
+# primero el guardrail same-account-only (ver comentario en
+# endpoint_same_account_only mas arriba) y AGREGAR excepciones bucket por
+# bucket para cada registro de contenedores publico (ECR, luego Quay.io
+# rompieron el pull de imagenes de la misma forma - S3 buckets propiedad de
+# terceros, accedidos via URL pre-firmada sin aws:PrincipalAccount del
+# llamador). Whack-a-mole que no escala: cualquier imagen publica nueva
+# puede estar respaldada por un bucket S3 distinto y desconocido de
+# antemano. Para una VPC que corre workloads de contenedores (EKS/ECS
+# Fargate), el guardrail same-account-only es incompatible con pull de
+# imagenes publicas en la practica - se prioriza que los pods arranquen.
+# El guardrail SI sigue aplicado en DynamoDB e Interface endpoints (KMS/SSM/
+# Secrets Manager/CloudWatch Logs/STS) - esas llamadas las hacen roles IAM
+# propios firmados con SigV4, con aws:PrincipalAccount real, no rompen con
+# este guardrail y siguen protegidas contra exfiltracion cross-account.
 resource "aws_vpc_endpoint" "s3" {
+  #checkov:skip=CKV2_AWS_39:sin policy a proposito - ver comentario arriba, un guardrail same-account rompe el pull de imagenes desde cualquier registro publico backed por S3 (ECR y Quay.io confirmados en la practica, ver aws-eks-cluster CLAUDE.md).
   count = var.enable_s3_endpoint ? 1 : 0
 
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
-  policy            = data.aws_iam_policy_document.s3_endpoint.json
 
   tags = {
     Name = "${var.name}-s3-endpoint"
