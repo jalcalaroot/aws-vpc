@@ -50,6 +50,34 @@ data "aws_iam_policy_document" "endpoint_same_account_only" {
 
 # --- Gateway Endpoints (gratis) ---
 
+# ECR almacena las capas de imagen en un bucket S3 propiedad de AWS
+# (prod-<region>-starport-layer-bucket, no de esta cuenta) y el pull usa
+# URLs pre-firmadas que no llevan el contexto normal de aws:PrincipalAccount
+# del llamador - el guardrail same-account-only de arriba las bloquea con
+# 403 Forbidden, rompiendo cualquier pull de imagen (ECS/EKS/Fargate) que
+# pase por este Gateway Endpoint. Documentado por AWS como fix conocido
+# (repost.aws/knowledge-center/ecs-ecr-docker-image-error): agregar un
+# statement explícito para ese bucket específico, además del guardrail
+# same-account-only genérico - no reemplaza el guardrail, lo complementa.
+data "aws_iam_policy_document" "s3_endpoint" {
+  #checkov:skip=CKV_AWS_49:mismo motivo que endpoint_same_account_only - VPC Endpoint Policy, no IAM de identidad.
+  #checkov:skip=CKV_AWS_1:mismo motivo que endpoint_same_account_only.
+  #checkov:skip=CKV2_AWS_40:mismo motivo que endpoint_same_account_only.
+  source_policy_documents = [data.aws_iam_policy_document.endpoint_same_account_only.json]
+
+  statement {
+    sid       = "AllowEcrImageLayerBucket"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::prod-${data.aws_region.current.region}-starport-layer-bucket/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+}
+
 resource "aws_vpc_endpoint" "s3" {
   count = var.enable_s3_endpoint ? 1 : 0
 
@@ -57,7 +85,7 @@ resource "aws_vpc_endpoint" "s3" {
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
-  policy            = data.aws_iam_policy_document.endpoint_same_account_only.json
+  policy            = data.aws_iam_policy_document.s3_endpoint.json
 
   tags = {
     Name = "${var.name}-s3-endpoint"
