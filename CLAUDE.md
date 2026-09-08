@@ -66,6 +66,12 @@ Every third-party GitHub Action in this repo's workflows is now pinned to a full
 
 Added `scorecard.yml` ([OSSF Scorecard](https://scorecard.dev/)) — free for public repos, uploads to the same Security tab as Checkov. Audits exactly this kind of practice (pinned dependencies, branch protection, token permissions, dangerous workflow patterns, etc.) automatically on every push, so a future unpinned Action gets flagged without anyone having to remember to check.
 
+## Gotcha: S3 endpoint same-account-only guardrail breaks ECR image pulls (real, hit in production)
+
+Found deploying `aws-eks-cluster` against a redeployed `jalcalaroot-dev` VPC (2026-09-08): every Fargate pod's image pull failed with `403 Forbidden` on a `prod-us-east-1-starport-layer-bucket` S3 URL, even for AWS's own `602401143452`-account CoreDNS image. Root cause: ECR stores image layers in an S3 bucket **owned by AWS**, not the caller's account, and the pull uses a pre-signed URL that doesn't carry the calling principal's `aws:PrincipalAccount` through the S3 Gateway Endpoint policy evaluation the normal way — so `endpoint_same_account_only`'s guardrail (added in the same v0.6.0 that also added this policy to the S3 endpoint) silently denies it. Documented by AWS as a known issue (repost.aws/knowledge-center/ecs-ecr-docker-image-error) — not specific to this module, this hits **any** ECS/EKS workload behind a locked-down S3 Gateway Endpoint.
+
+Fixed in `endpoints.tf`: a second statement (`AllowEcrImageLayerBucket`) explicitly allows `s3:GetObject` on `arn:aws:s3:::prod-<region>-starport-layer-bucket/*`, merged with the existing same-account-only guardrail via `source_policy_documents` (doesn't weaken it for anything else — only this one AWS-owned bucket gets the exception). Confirmed real: `terraform apply` on `aws-eks-cluster` had been stuck 20 minutes with `aws_eks_addon.coredns` in `DEGRADED`/`ErrImagePull` before this was found and fixed.
+
 ## Status
 
 - 2026-09-05: Supply-chain hardening - all Actions pinned by SHA, Dependabot watching `github-actions`, OSSF Scorecard added. See section above.
