@@ -77,6 +77,12 @@ data "aws_iam_policy_document" "s3_endpoint_full_access" {
   #checkov:skip=CKV_AWS_49:mismo motivo que endpoint_same_account_only - VPC Endpoint Policy, no IAM de identidad.
   #checkov:skip=CKV_AWS_1:mismo motivo que endpoint_same_account_only.
   #checkov:skip=CKV2_AWS_40:mismo motivo que endpoint_same_account_only - ver comentario arriba sobre por que este endpoint especifico no lleva el guardrail same-account.
+  #checkov:skip=CKV_AWS_108:mismo motivo - VPC Endpoint Policy, no IAM de identidad. El check de exfiltracion no aplica: esto es el techo de acceso al SERVICIO S3 en si (que bucket/API se puede llamar via este endpoint), no permisos otorgados a un principal.
+  #checkov:skip=CKV_AWS_109:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_107:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_356:mismo motivo que CKV_AWS_108 - Resource "*" es intencional, el guardrail real de este endpoint es no bloquear pulls de registros publicos backed por S3 (ver comentario en el resource de abajo).
+  #checkov:skip=CKV_AWS_110:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_111:mismo motivo que CKV_AWS_108.
   statement {
     sid       = "AllowAll"
     effect    = "Allow"
