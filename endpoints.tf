@@ -50,7 +50,7 @@ data "aws_iam_policy_document" "endpoint_same_account_only" {
 
 # --- Gateway Endpoints (gratis) ---
 
-# SIN policy (default de AWS: acceso completo) a proposito - intentamos
+# Policy de acceso completo EXPLICITA (no omitida) a proposito - intentamos
 # primero el guardrail same-account-only (ver comentario en
 # endpoint_same_account_only mas arriba) y AGREGAR excepciones bucket por
 # bucket para cada registro de contenedores publico (ECR, luego Quay.io
@@ -65,14 +65,39 @@ data "aws_iam_policy_document" "endpoint_same_account_only" {
 # Secrets Manager/CloudWatch Logs/STS) - esas llamadas las hacen roles IAM
 # propios firmados con SigV4, con aws:PrincipalAccount real, no rompen con
 # este guardrail y siguen protegidas contra exfiltracion cross-account.
+#
+# IMPORTANTE: `policy` en aws_vpc_endpoint es Optional+Computed - omitir el
+# argumento NO revierte una policy restrictiva ya aplicada (Terraform la
+# deja como esta, sin gestionarla, "no changes" en el plan aunque el
+# endpoint real siga bloqueado). Hay que setear el full-access policy
+# EXPLICITO para que Terraform lo aplique de verdad - confirmado en la
+# practica: v0.6.2 omitia `policy` y un `terraform apply` real no cambio
+# nada en el endpoint ya existente.
+data "aws_iam_policy_document" "s3_endpoint_full_access" {
+  #checkov:skip=CKV_AWS_49:mismo motivo que endpoint_same_account_only - VPC Endpoint Policy, no IAM de identidad.
+  #checkov:skip=CKV_AWS_1:mismo motivo que endpoint_same_account_only.
+  #checkov:skip=CKV2_AWS_40:mismo motivo que endpoint_same_account_only - ver comentario arriba sobre por que este endpoint especifico no lleva el guardrail same-account.
+  statement {
+    sid       = "AllowAll"
+    effect    = "Allow"
+    actions   = ["*"]
+    resources = ["*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+}
+
 resource "aws_vpc_endpoint" "s3" {
-  #checkov:skip=CKV2_AWS_39:sin policy a proposito - ver comentario arriba, un guardrail same-account rompe el pull de imagenes desde cualquier registro publico backed por S3 (ECR y Quay.io confirmados en la practica, ver aws-eks-cluster CLAUDE.md).
   count = var.enable_s3_endpoint ? 1 : 0
 
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
+  policy            = data.aws_iam_policy_document.s3_endpoint_full_access.json
 
   tags = {
     Name = "${var.name}-s3-endpoint"
