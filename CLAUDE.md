@@ -43,6 +43,13 @@ Found and fixed one real issue while getting Checkov clean: `aws_security_group.
 
 12 Checkov exceptions on the NACLs, all pre-existing intentional design (documented inline with `#checkov:skip`): transit NACL wide-open per AWS's own TGW guidance, shared private NACL by design, ephemeral port ranges (1024-65535) false-flagged against well-known ports like 3389, and `subnet_ids` set via splat (`aws_subnet.x[*].id`) not resolved by Checkov's graph analysis (`CKV2_AWS_1` false positive — verify the real association with `aws ec2 describe-network-acls` if ever in doubt).
 
+## Secret scanning: two independent layers
+
+1. **gitleaks** (ours) — runs in CI (`gitleaks.yml`) and locally via pre-commit. Covers all 4 repos in the workspace.
+2. **GitHub's own native secret scanning + push protection** — confirmed `enabled` on this repo via the API (`security_and_analysis.secret_scanning.status`), free for public repos, zero setup from us (it's on by default). Push protection means a push containing a recognized secret pattern gets rejected *before* it lands, not just flagged after. View at Settings → Security → Secret scanning alerts.
+
+Not available on the 2 private bootstrap repos (`jalcalaroot-aws-bootstrap`/`jalcalaroot-azure-bootstrap`) — same GitHub Advanced Security gate as Code scanning/SARIF. gitleaks is the only coverage there.
+
 ## Gotcha: `#checkov:skip` doesn't dismiss the Security-tab alert
 
 Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — GitHub's code scanning shows them as regular **open** alerts regardless of the inline `#checkov:skip` comment and justification in the `.tf` file. All 15 existing ones were manually dismissed via the API (`gh api -X PATCH repos/jalcalaroot/aws-vpc/code-scanning/alerts/<n> -f state=dismissed -f dismissed_reason="..." -f dismissed_comment="..."`) with a reason (`false positive` for genuine Checkov graph/pattern limitations, `won't fix` for deliberate cost/design decisions) and a comment pointing back to the `.tf` justification. **If a future PR adds a new `#checkov:skip`, its alert will show up open in the Security tab and needs the same manual dismiss** — nothing automates this yet.
@@ -51,7 +58,23 @@ Checkov's SARIF export doesn't mark skipped/accepted findings as suppressed — 
 
 Every third-party GitHub Action in this repo's workflows is now pinned to a full commit SHA (with a `# vX.Y.Z` comment for readability), per [GitHub's own Actions hardening guide](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) — a tag like `@v4` is mutable; if that upstream repo is ever compromised and the tag moved, our CI would silently run malicious code with our OIDC credentials on the next push. `dependabot.yml` now also watches the `github-actions` ecosystem so these pins get bumped (new SHA + comment) automatically instead of going stale.
 
+## Gotcha: tflint's unauthenticated GitHub API rate limit (real, hit in production)
+
+`tflint --init` fetches ruleset plugins (`aws`, `azurerm`) from the GitHub API. Without a token, that's capped at 60 requests/hour **per IP** — and GitHub-hosted runners share IP pools across every repo/org using them, so this limit gets exhausted by unrelated traffic, not just ours. Broke a real CI run on `azure-virtual-network` on 2026-09-05 with `403 API rate limit exceeded`. Fix: pass `GITHUB_TOKEN: ${{ github.token }}` as an env var on the `tflint` step (raises the limit to 5000/hour, tied to the actual repo token) — already applied here.
+
+**Related bug this exposed**: the SARIF-upload step had `if: always()`, intended to survive a *Checkov* failure (`soft_fail: false` makes it exit non-zero on findings) — but it also ran when an *earlier, unrelated* step failed (like tflint's rate limit), and choked on `results.sarif` not existing, masking the real error in the check summary. Fixed by giving the Checkov step `id: checkov` and changing the upload condition to `if: always() && steps.checkov.outcome != 'skipped'` — still uploads on a real Checkov failure, no longer masks anything upstream of it.
+
 Added `scorecard.yml` ([OSSF Scorecard](https://scorecard.dev/)) — free for public repos, uploads to the same Security tab as Checkov. Audits exactly this kind of practice (pinned dependencies, branch protection, token permissions, dangerous workflow patterns, etc.) automatically on every push, so a future unpinned Action gets flagged without anyone having to remember to check.
+
+## Gotcha: S3 endpoint same-account-only guardrail breaks image pulls from ANY public registry backed by S3 (real, hit in production twice)
+
+Found deploying `aws-eks-cluster` against a redeployed `jalcalaroot-dev` VPC (2026-09-08): every Fargate pod's image pull failed with `403 Forbidden` on an S3 URL, even for AWS's own `602401143452`-account CoreDNS image. Root cause: container registries commonly store image layers in an S3 bucket **owned by the registry provider**, not the caller's account, and the pull uses a pre-signed URL that doesn't carry the calling principal's `aws:PrincipalAccount` through the S3 Gateway Endpoint policy evaluation the normal way — so `endpoint_same_account_only`'s guardrail (added in v0.6.0, applied to the S3 endpoint in the same version) silently denies it.
+
+**v0.6.1 tried a targeted fix** (allow just `prod-<region>-starport-layer-bucket`, ECR's bucket) — and it worked, for ECR. It broke again immediately for a different reason: installing Argo CD (`quay.io/argoproj/argocd`) hit the exact same 403, this time against `quayio-production-s3`, a **completely different bucket**, because Quay.io uses its own S3-backed storage too. This is whack-a-mole that doesn't scale — any public image can be backed by any S3 bucket, unknown in advance, and each one would need its own exception statement discovered by breaking first.
+
+**v0.6.2: removed the policy from the S3 Gateway Endpoint entirely** (`aws_vpc_endpoint.s3` now has no `policy` argument — AWS default, full access) rather than adding a third bucket exception. For a VPC running container workloads (EKS/ECS Fargate), the same-account-only guardrail is fundamentally incompatible with pulling public images — the operational cost (broken pods, no obvious error pointing at the real cause) outweighs the guardrail's benefit here. The guardrail is **kept** on the DynamoDB Gateway endpoint and all Interface endpoints (KMS/SSM/Secrets Manager/CloudWatch Logs/STS) — those calls are made by this account's own IAM roles, SigV4-signed with real `aws:PrincipalAccount` context, so they never hit this false-positive and stay protected against cross-account exfiltration.
+
+If a future consumer of this module needs the same-account guardrail back on S3 specifically (e.g. a VPC that never runs container workloads, only accesses known internal buckets), reintroduce `data.aws_iam_policy_document.endpoint_same_account_only` as the `policy` on `aws_vpc_endpoint.s3` directly — don't reach for a bucket-allowlist approach again, it doesn't scale past the first registry.
 
 ## Status
 
