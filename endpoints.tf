@@ -50,6 +50,52 @@ data "aws_iam_policy_document" "endpoint_same_account_only" {
 
 # --- Gateway Endpoints (gratis) ---
 
+# Policy de acceso completo EXPLICITA (no omitida) a proposito - intentamos
+# primero el guardrail same-account-only (ver comentario en
+# endpoint_same_account_only mas arriba) y AGREGAR excepciones bucket por
+# bucket para cada registro de contenedores publico (ECR, luego Quay.io
+# rompieron el pull de imagenes de la misma forma - S3 buckets propiedad de
+# terceros, accedidos via URL pre-firmada sin aws:PrincipalAccount del
+# llamador). Whack-a-mole que no escala: cualquier imagen publica nueva
+# puede estar respaldada por un bucket S3 distinto y desconocido de
+# antemano. Para una VPC que corre workloads de contenedores (EKS/ECS
+# Fargate), el guardrail same-account-only es incompatible con pull de
+# imagenes publicas en la practica - se prioriza que los pods arranquen.
+# El guardrail SI sigue aplicado en DynamoDB e Interface endpoints (KMS/SSM/
+# Secrets Manager/CloudWatch Logs/STS) - esas llamadas las hacen roles IAM
+# propios firmados con SigV4, con aws:PrincipalAccount real, no rompen con
+# este guardrail y siguen protegidas contra exfiltracion cross-account.
+#
+# IMPORTANTE: `policy` en aws_vpc_endpoint es Optional+Computed - omitir el
+# argumento NO revierte una policy restrictiva ya aplicada (Terraform la
+# deja como esta, sin gestionarla, "no changes" en el plan aunque el
+# endpoint real siga bloqueado). Hay que setear el full-access policy
+# EXPLICITO para que Terraform lo aplique de verdad - confirmado en la
+# practica: v0.6.2 omitia `policy` y un `terraform apply` real no cambio
+# nada en el endpoint ya existente.
+data "aws_iam_policy_document" "s3_endpoint_full_access" {
+  #checkov:skip=CKV_AWS_49:mismo motivo que endpoint_same_account_only - VPC Endpoint Policy, no IAM de identidad.
+  #checkov:skip=CKV_AWS_1:mismo motivo que endpoint_same_account_only.
+  #checkov:skip=CKV2_AWS_40:mismo motivo que endpoint_same_account_only - ver comentario arriba sobre por que este endpoint especifico no lleva el guardrail same-account.
+  #checkov:skip=CKV_AWS_108:mismo motivo - VPC Endpoint Policy, no IAM de identidad. El check de exfiltracion no aplica: esto es el techo de acceso al SERVICIO S3 en si (que bucket/API se puede llamar via este endpoint), no permisos otorgados a un principal.
+  #checkov:skip=CKV_AWS_109:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_107:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_356:mismo motivo que CKV_AWS_108 - Resource "*" es intencional, el guardrail real de este endpoint es no bloquear pulls de registros publicos backed por S3 (ver comentario en el resource de abajo).
+  #checkov:skip=CKV_AWS_110:mismo motivo que CKV_AWS_108.
+  #checkov:skip=CKV_AWS_111:mismo motivo que CKV_AWS_108.
+  statement {
+    sid       = "AllowAll"
+    effect    = "Allow"
+    actions   = ["*"]
+    resources = ["*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+}
+
 resource "aws_vpc_endpoint" "s3" {
   count = var.enable_s3_endpoint ? 1 : 0
 
@@ -57,7 +103,7 @@ resource "aws_vpc_endpoint" "s3" {
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.compute.id, aws_route_table.data.id]
-  policy            = data.aws_iam_policy_document.endpoint_same_account_only.json
+  policy            = data.aws_iam_policy_document.s3_endpoint_full_access.json
 
   tags = {
     Name = "${var.name}-s3-endpoint"
