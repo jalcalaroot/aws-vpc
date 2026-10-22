@@ -8,10 +8,12 @@ on:
 
 permissions:
   contents: read
-  security-events: write # subir el SARIF de Checkov a la pestaña Security
 
 jobs:
   validate:
+    permissions:
+      contents: read
+      security-events: write # subir el SARIF de Checkov a la pestaña Security
     name: fmt + validate
     runs-on: ubuntu-latest
 
